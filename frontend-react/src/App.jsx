@@ -16,7 +16,7 @@ const MEDIA_FIELD_KEYS = {
   ghanaCardBack: "ghanaCardBackBase64"
 };
 const DOCUMENT_FIELD_KEYS = new Set(["apparisal", "performanceContract", "certificates", "cv"]);
-const MULTI_DOCUMENT_FIELD_KEYS = new Set(["certificates"]);
+const MULTI_DOCUMENT_FIELD_KEYS = new Set(["apparisal", "performanceContract", "certificates"]);
 
 // Master field registry for the profile form renderer.
 const FIELD_DEFS = {
@@ -67,7 +67,7 @@ const FIELD_DEFS = {
       "Half Assini"
     ]
   },
-  apparisal: { label: "Apparisal", type: "text" },
+  apparisal: { label: "Appraisal", type: "text" },
   performanceContract: { label: "Performance Contract", type: "text" },
   certificates: { label: "Certificates", type: "textarea" },
   cv: { label: "CV", type: "textarea" },
@@ -75,7 +75,7 @@ const FIELD_DEFS = {
   entryChecklist: { label: "Entry Checklist", type: "text" },
   status: { label: "Employment Status", type: "select", options: ["Engaged", "Resigned", "Terminated", "Dismissed", "End of Contract"] },
   exitDate: { label: "Exit Date (last working day)", type: "date" },
-  lengthService: { label: "Length Service", type: "text" },
+  lengthService: { label: "Length of Service", type: "text" },
   exitChecklist: { label: "Exit Checklist", type: "textarea" },
   annualLeaveEntitlement: { label: "Annual Leave Entitlement", type: "number" },
   leaveTaken: { label: "Leave Taken", type: "number" },
@@ -121,7 +121,7 @@ const PROFILE_SECTION_DEFS = [
     title: "Personal Info",
     fields: [
       "employeeNo", "title", "fullName", "firstName", "middleName", "lastName",
-      "gender", "dateOfBirth", "age", "maritalStatus"
+      "gender", "dateOfBirth", "age", "maritalStatus", "ghanaCardNumber"
     ]
   },
   {
@@ -147,7 +147,7 @@ const PROFILE_SECTION_DEFS = [
     title: "Bank and Statutory Info",
     fields: [
       "socialSecurityNo", "bankName", "bankBranchName", "accountNo",
-      "taxIdentificationNo", "ghanaCardNumber"
+      "taxIdentificationNo"
     ]
   },
   {
@@ -313,6 +313,11 @@ const formatCurrencyInput = (value) => {
   const formattedInteger = Number(integerPart).toLocaleString("en-GH");
   if (hasDot) return `GH₵ ${formattedInteger}.${decimalPart}`;
   return `GH₵ ${formattedInteger}`;
+};
+const toCsvCell = (value) => {
+  const normalized = value == null ? "" : String(value);
+  const escaped = normalized.replace(/"/g, "\"\"");
+  return `"${escaped}"`;
 };
 const KEYBOARD_NAV_SELECTOR = "input, select, textarea, button, a[href]";
 
@@ -825,6 +830,37 @@ export default function App() {
     // Browser print dialog supports "Save as PDF" on Windows.
     window.print();
   };
+  const exportEmployeesCsv = () => {
+    const customFieldKeys = Array.from(
+      new Set(employees.flatMap((emp) => Object.keys(emp.customFields || {})))
+    ).sort((a, b) => a.localeCompare(b));
+    const columns = [...BASE_ORDER, ...customFieldKeys.map((key) => `custom:${key}`)];
+    const header = columns.map((key) => (
+      key.startsWith("custom:")
+        ? key.replace("custom:", "Custom - ")
+        : FIELD_DEFS[key]?.label || key
+    ));
+    const rows = employees.map((emp) => columns.map((key) => {
+      if (key.startsWith("custom:")) {
+        const customKey = key.replace("custom:", "");
+        return toCsvCell(emp.customFields?.[customKey] ?? "");
+      }
+      const value = emp[key];
+      if (typeof value === "boolean") return toCsvCell(value ? "Yes" : "No");
+      return toCsvCell(value ?? "");
+    }));
+
+    const csv = [header.map(toCsvCell).join(","), ...rows.map((row) => row.join(","))].join("\n");
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `employees-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
 
   // Dynamic field renderer used by the profile page.
   const renderField = (key) => {
@@ -1223,6 +1259,7 @@ export default function App() {
           </div>
           <div className="row sheet-toolbar">
             <button className="btn btn-secondary" onClick={() => setCurrentPage("dashboard")}>Back to Dashboard</button>
+            <button className="btn btn-primary" type="button" onClick={exportEmployeesCsv}>Export All (CSV)</button>
             <input
               value={listSearch}
               onChange={(e) => setListSearch(e.target.value)}

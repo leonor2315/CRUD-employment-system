@@ -81,6 +81,12 @@ Create backup:
 powershell -ExecutionPolicy Bypass -File .\ops\backup-db.ps1
 ```
 
+Cleanup old backups (keeps last 30 days by default):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\ops\cleanup-backups.ps1 -KeepDays 30
+```
+
 Restore from backup:
 
 ```powershell
@@ -88,6 +94,7 @@ powershell -ExecutionPolicy Bypass -File .\ops\restore-db.ps1 -BackupFile ".\bac
 ```
 
 Recommendation: schedule `ops\backup-db.ps1` daily with Windows Task Scheduler.
+Recommendation: run `ops\cleanup-backups.ps1` weekly (or after backup) to control disk growth.
 
 ### Import ready-made daily backup task (Windows)
 
@@ -97,6 +104,14 @@ Recommendation: schedule `ops\backup-db.ps1` daily with Windows Task Scheduler.
    - `C:\Users\USER\employee-work-system\ops\backup-db.ps1`
    - Working directory `C:\Users\USER\employee-work-system`
 4. Save the task and run it once manually to confirm a file appears in `backups\`.
+
+## One-click Start (client machine)
+
+From project root:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Start-App.ps1
+```
 
 ## Local Run (without Docker)
 

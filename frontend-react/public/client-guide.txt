@@ -18,29 +18,34 @@ TELENERGY EMPLOYEE WORK SYSTEM - CLIENT GUIDE
 - Click "Export to PDF".
 - In the print dialog, choose "Save as PDF" and save/share the file.
 
-4) LOCATION MANAGEMENT
+4) EXPORT ALL EMPLOYEES (CSV)
+- Open "Employee List View".
+- Click "Export All (CSV)".
+- Share the downloaded CSV file in Excel-compatible format.
+
+5) LOCATION MANAGEMENT
 - Open "Form Designer".
 - Use "Location Stations" section:
   - Add Station: type a new station name and click Add Station.
   - Remove: click Remove on a station.
 
-5) DASHBOARD METRIC CARDS
+6) DASHBOARD METRIC CARDS
 - Total Employees, Engaged Employees, and On Payroll are counted from active employee records.
 - If numbers look old, click "Reload Data".
 - If still not updated, refresh browser with Ctrl+F5.
 
-6) KEYBOARD NAVIGATION
+7) KEYBOARD NAVIGATION
 - Enter moves to next input field.
 - In password field, Enter signs in.
 - Arrow keys move focus between fields.
 - Enter on buttons/links acts like OK (activates action).
 
-7) DATA SAFETY
+8) DATA SAFETY
 - Backups are expected daily.
 - Confirm backup files exist in: .\backups\
 - Keep at least 30 days of backups.
 
-8) QUICK HEALTH CHECK
+9) QUICK HEALTH CHECK
 - Run in terminal:
   docker compose ps
 - Ensure all services show "Up" and "healthy":
@@ -49,14 +54,14 @@ TELENERGY EMPLOYEE WORK SYSTEM - CLIENT GUIDE
   - backend-python
   - frontend-react
 
-9) IF SOMETHING LOOKS STUCK
+10) IF SOMETHING LOOKS STUCK
 - Hard refresh browser: Ctrl+F5
 - Restart services:
   docker compose up -d --build
 - Check logs:
   docker compose logs --tail 200
 
-10) SECURITY BASICS
+11) SECURITY BASICS
 - Change default credentials before production use.
 - Keep .env values private.
 - Limit server access to trusted users.
