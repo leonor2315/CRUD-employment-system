@@ -340,8 +340,8 @@ export default function App() {
   const [employees, setEmployees] = useState([]);
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
-  const [username, setUsername] = useState(savedAuth.username || "Administration");
-  const [password, setPassword] = useState(savedAuth.password || "HMRI056");
+  const [username, setUsername] = useState(savedAuth.username || "administration");
+  const [password, setPassword] = useState(savedAuth.password || "HRMI056");
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(savedAuth.isAuthenticated));
   const [form, setForm] = useState({ ...defaultForm, customFields: {} });
   const [customDefs, setCustomDefs] = useState(() => normalizeCustomDefs(readStored(CUSTOM_KEY, [])));
@@ -366,7 +366,7 @@ export default function App() {
   const [editEmployeeNo, setEditEmployeeNo] = useState("");
   const usernameInputRef = useRef(null);
   const passwordInputRef = useRef(null);
-  const isAdmin = username.trim().toLowerCase() === "admin";
+  const isAdmin = username.trim().toLowerCase() === "administration";
   const handleKeyboardNavigation = (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;

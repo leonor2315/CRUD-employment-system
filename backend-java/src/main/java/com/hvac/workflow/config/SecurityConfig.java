@@ -54,7 +54,7 @@ public class SecurityConfig {
     public UserDetailsService userDetailsService(PasswordEncoder encoder) {
         // Demo in-memory users for quick local testing.
         return new InMemoryUserDetailsManager(
-                User.withUsername("admin").password(encoder.encode("HRMI056")).roles("ADMIN").build(),
+                User.withUsername("administration").password(encoder.encode("HRMI056")).roles("ADMIN").build(),
                 User.withUsername("manager").password(encoder.encode("manager123")).roles("MANAGER").build(),
                 User.withUsername("employee").password(encoder.encode("employee123")).roles("EMPLOYEE").build()
         );
