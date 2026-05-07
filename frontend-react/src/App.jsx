@@ -1520,7 +1520,7 @@ export default function App() {
       <footer className="app-footer">
         <span>Copyright &copy; {currentYear} TELENERGY. All rights reserved.</span>
         <div className="app-footer-links">
-          <a href="/client-guide.txt" target="_blank" rel="noreferrer">Client Guide</a>
+          <a href="/client-guide.html" target="_blank" rel="noreferrer">Client Guide</a>
           <a href="http://localhost:5173" target="_blank" rel="noreferrer">App</a>
         </div>
       </footer>

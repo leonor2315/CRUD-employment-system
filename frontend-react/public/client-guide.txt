@@ -3,7 +3,7 @@ TELENERGY EMPLOYEE WORK SYSTEM - CLIENT GUIDE
 
 1) DAILY USE
 - Open: http://localhost:5173
-- Login with your assigned username/password.
+- Login with your assigned username/password (admin users can access Form Designer and full views).
 - Use "Reload Data" when you need the latest records.
 - Use "Employee List View" and "Employee Detail View" to review records.
 
@@ -13,24 +13,34 @@ TELENERGY EMPLOYEE WORK SYSTEM - CLIENT GUIDE
 - Upload documents for Apparisal, Performance Contract, Certificates, and CV.
 - Certificates supports multiple uploads.
 
-3) LOCATION MANAGEMENT
+3) EXPORT TO PDF
+- Open an employee in "Employee Detail View".
+- Click "Export to PDF".
+- In the print dialog, choose "Save as PDF" and save/share the file.
+
+4) LOCATION MANAGEMENT
 - Open "Form Designer".
 - Use "Location Stations" section:
   - Add Station: type a new station name and click Add Station.
   - Remove: click Remove on a station.
 
-4) KEYBOARD NAVIGATION
+5) DASHBOARD METRIC CARDS
+- Total Employees, Engaged Employees, and On Payroll are counted from active employee records.
+- If numbers look old, click "Reload Data".
+- If still not updated, refresh browser with Ctrl+F5.
+
+6) KEYBOARD NAVIGATION
 - Enter moves to next input field.
 - In password field, Enter signs in.
 - Arrow keys move focus between fields.
 - Enter on buttons/links acts like OK (activates action).
 
-5) DATA SAFETY
+7) DATA SAFETY
 - Backups are expected daily.
 - Confirm backup files exist in: .\backups\
 - Keep at least 30 days of backups.
 
-6) QUICK HEALTH CHECK
+8) QUICK HEALTH CHECK
 - Run in terminal:
   docker compose ps
 - Ensure all services show "Up" and "healthy":
@@ -39,14 +49,14 @@ TELENERGY EMPLOYEE WORK SYSTEM - CLIENT GUIDE
   - backend-python
   - frontend-react
 
-7) IF SOMETHING LOOKS STUCK
+9) IF SOMETHING LOOKS STUCK
 - Hard refresh browser: Ctrl+F5
 - Restart services:
   docker compose up -d --build
 - Check logs:
   docker compose logs --tail 200
 
-8) SECURITY BASICS
+10) SECURITY BASICS
 - Change default credentials before production use.
 - Keep .env values private.
 - Limit server access to trusted users.
