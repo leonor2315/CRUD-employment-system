@@ -33,19 +33,25 @@ def db_conn():
 def work_summary():
     # Return counts and grouped summaries used by dashboard metric cards/charts.
     with db_conn() as conn:
-        total_employees = conn.execute(text("select count(*) from employee_work")).scalar() or 0
+        total_employees = conn.execute(text("select count(*) from technician")).scalar() or 0
         active_employees = conn.execute(
-            text("select count(*) from employee_work where status = 'Engaged'")
+            text(
+                "select count(*) from technician "
+                "where lower(trim(coalesce(status, ''))) = 'engaged'"
+            )
         ).scalar() or 0
         on_payroll = conn.execute(
-            text("select count(*) from employee_work where payroll_status = 'On payroll'")
+            text(
+                "select count(*) from technician "
+                "where lower(trim(coalesce(payroll_status, ''))) = 'on payroll'"
+            )
         ).scalar() or 0
 
         status_rows = conn.execute(
-            text("select status, count(*) as total from employee_work group by status order by status")
+            text("select status, count(*) as total from technician group by status order by status")
         ).all()
         location_rows = conn.execute(
-            text("select location, count(*) as total from employee_work group by location order by location")
+            text("select location, count(*) as total from technician group by location order by location")
         ).all()
 
     return {
