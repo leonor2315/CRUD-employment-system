@@ -1,0 +1,23 @@
+version: '3.9'
+services:
+  backend-java:
+    build:
+      context: ./backend-java
+    container_name: hvac-backend
+    ports:
+      - "8082:8082"
+    volumes:
+      - ./backend-java/data:/app/data
+    environment:
+      - SPRING_DATASOURCE_URL=jdbc:h2:file:./data/hvacdb;DB_CLOSE_DELAY=-1;MODE=PostgreSQL
+      - SPRING_DATASOURCE_USERNAME=sa
+      - SPRING_DATASOURCE_PASSWORD=
+
+  frontend-react:
+    build:
+      context: ./frontend-react
+    container_name: hvac-frontend
+    ports:
+      - "4173:4173"
+    depends_on:
+      - backend-java

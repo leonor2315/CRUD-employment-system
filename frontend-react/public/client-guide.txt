@@ -1,0 +1,55 @@
+TELENERGY EMPLOYEE WORK SYSTEM - CLIENT GUIDE
+=============================================
+
+1) DAILY USE
+- Open: http://localhost:5173
+- Login with your assigned username/password.
+- Use "Reload Data" when you need the latest records.
+- Use "Employee List View" and "Employee Detail View" to review records.
+
+2) EMPLOYEE PROFILE ENTRY
+- Fill required sections (Personal Info, Work Info, Benefits, etc.).
+- Upload identity images (passport, Ghana Card front/back).
+- Upload documents for Apparisal, Performance Contract, Certificates, and CV.
+- Certificates supports multiple uploads.
+
+3) LOCATION MANAGEMENT
+- Open "Form Designer".
+- Use "Location Stations" section:
+  - Add Station: type a new station name and click Add Station.
+  - Remove: click Remove on a station.
+
+4) KEYBOARD NAVIGATION
+- Enter moves to next input field.
+- In password field, Enter signs in.
+- Arrow keys move focus between fields.
+- Enter on buttons/links acts like OK (activates action).
+
+5) DATA SAFETY
+- Backups are expected daily.
+- Confirm backup files exist in: .\backups\
+- Keep at least 30 days of backups.
+
+6) QUICK HEALTH CHECK
+- Run in terminal:
+  docker compose ps
+- Ensure all services show "Up" and "healthy":
+  - employee-postgres
+  - backend-java
+  - backend-python
+  - frontend-react
+
+7) IF SOMETHING LOOKS STUCK
+- Hard refresh browser: Ctrl+F5
+- Restart services:
+  docker compose up -d --build
+- Check logs:
+  docker compose logs --tail 200
+
+8) SECURITY BASICS
+- Change default credentials before production use.
+- Keep .env values private.
+- Limit server access to trusted users.
+
+Support note:
+- Keep this file with the deployment package and share it with operations staff.
