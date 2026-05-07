@@ -369,9 +369,24 @@ export default function App() {
   const [selectedEmployeeNo, setSelectedEmployeeNo] = useState("");
   const [selectedListEmployeeNo, setSelectedListEmployeeNo] = useState("");
   const [editEmployeeNo, setEditEmployeeNo] = useState("");
+  const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
+  const [confirmDialogMessage, setConfirmDialogMessage] = useState("");
+  const confirmResolverRef = useRef(null);
   const usernameInputRef = useRef(null);
   const passwordInputRef = useRef(null);
   const isAdmin = username.trim().toLowerCase() === "administration";
+  const requestConfirmation = (message) => new Promise((resolve) => {
+    confirmResolverRef.current = resolve;
+    setConfirmDialogMessage(message);
+    setConfirmDialogOpen(true);
+  });
+  const closeConfirmation = (accepted) => {
+    setConfirmDialogOpen(false);
+    if (confirmResolverRef.current) {
+      confirmResolverRef.current(accepted);
+      confirmResolverRef.current = null;
+    }
+  };
   const handleKeyboardNavigation = (event) => {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
@@ -588,7 +603,9 @@ export default function App() {
   };
 
   // Reset user session and clear dashboard state.
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const shouldLogout = await requestConfirmation("Are you sure you want to log out?");
+    if (!shouldLogout) return;
     setIsAuthenticated(false);
     setEmployees([]);
     setSummary(null);
@@ -608,7 +625,7 @@ export default function App() {
 
   // Create a new employee profile.
   const createEmployee = async () => {
-    const shouldCreate = window.confirm("Are you sure you want to create this employee profile?");
+    const shouldCreate = await requestConfirmation("Are you sure you want to create this employee profile?");
     if (!shouldCreate) return;
 
     const res = await fetch(JAVA_API, { method: "POST", headers: { "Content-Type": "application/json", ...authHeader() }, body: JSON.stringify(toPayload(form)) });
@@ -622,6 +639,8 @@ export default function App() {
 
   // Update an employee and backfill legacy fields for compatibility.
   const updateEmployee = async (emp) => {
+    const shouldUpdate = await requestConfirmation(`Update employee ${emp.employeeNo || ""}?`);
+    if (!shouldUpdate) return;
     const legacyName = emp.legacyEmployeeName || emp.fullName || "";
     const nameParts = legacyName.trim().split(" ").filter(Boolean);
     const safeFirstName = emp.firstName || nameParts[0] || "Unknown";
@@ -655,6 +674,8 @@ export default function App() {
 
   // Delete a profile by employee number.
   const deleteEmployee = async (employeeNo) => {
+    const shouldDelete = await requestConfirmation(`Delete employee ${employeeNo}? This cannot be undone.`);
+    if (!shouldDelete) return;
     const res = await fetch(`${JAVA_API}/${employeeNo}`, { method: "DELETE", headers: authHeader() });
     if (!res.ok) return setError("Delete failed. Ensure role is ADMIN/MANAGER.");
     loadData();
@@ -676,7 +697,7 @@ export default function App() {
   };
   const saveEditedEmployee = async () => {
     if (!editEmployeeNo) return;
-    const shouldSave = window.confirm("Save all changes to this employee profile?");
+    const shouldSave = await requestConfirmation("Save all changes to this employee profile?");
     if (!shouldSave) return;
     const res = await fetch(`${JAVA_API}/${editEmployeeNo}`, {
       method: "PUT",
@@ -708,7 +729,7 @@ export default function App() {
   };
 
   // Add an admin-defined custom field to the dynamic form.
-  const addCustomField = () => {
+  const addCustomField = async () => {
     const label = newFieldLabel.trim();
     if (!label) return;
     const key = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
@@ -720,6 +741,8 @@ export default function App() {
     if (newFieldType === "select" && options.length < 2) {
       return setError("Select custom field needs at least 2 comma-separated options.");
     }
+    const shouldAddField = await requestConfirmation(`Add new custom field "${label}"?`);
+    if (!shouldAddField) return;
     const def = { key, label, type: newFieldType, options };
     setCustomDefs((prev) => [...prev, def]);
     setFieldOrder((prev) => [...prev, `custom:${key}`]);
@@ -735,7 +758,7 @@ export default function App() {
     setNewFieldOptions("");
     setError("");
   };
-  const addLocationOption = () => {
+  const addLocationOption = async () => {
     const locationName = newLocation.trim();
     if (!locationName) return;
     const exists = locationOptions.some((option) => option.toLowerCase() === locationName.toLowerCase());
@@ -743,15 +766,19 @@ export default function App() {
       setError("Location already exists.");
       return;
     }
+    const shouldAddLocation = await requestConfirmation(`Add location station "${locationName}"?`);
+    if (!shouldAddLocation) return;
     setLocationOptions((prev) => [...prev, locationName]);
     setNewLocation("");
     setError("");
   };
-  const removeLocationOption = (locationName) => {
+  const removeLocationOption = async (locationName) => {
     if (locationOptions.length <= 1) {
       setError("At least one location must remain.");
       return;
     }
+    const shouldRemoveLocation = await requestConfirmation(`Remove location station "${locationName}"?`);
+    if (!shouldRemoveLocation) return;
     setLocationOptions((prev) => prev.filter((option) => option !== locationName));
     if (form.location === locationName) {
       const fallback = locationOptions.find((option) => option !== locationName) || "";
@@ -826,8 +853,7 @@ export default function App() {
       }
     }));
   };
-  const exportEmployeeDetailPdf = () => {
-    // Browser print dialog supports "Save as PDF" on Windows.
+  const exportEmployeeDetailPdf = async () => {
     window.print();
   };
   const exportEmployeesCsv = () => {
@@ -1552,6 +1578,22 @@ export default function App() {
           <button className="btn btn-primary" onClick={() => setCurrentPage("profile")}>
             Employee Profile
           </button>
+        </div>
+      )}
+      {confirmDialogOpen && (
+        <div className="confirm-overlay" role="dialog" aria-modal="true" aria-label="Confirmation dialog">
+          <div className="confirm-card">
+            <h3>Please Confirm</h3>
+            <p>{confirmDialogMessage}</p>
+            <div className="confirm-actions">
+              <button className="btn btn-secondary" type="button" onClick={() => closeConfirmation(false)}>
+                Cancel
+              </button>
+              <button className="btn btn-primary" type="button" onClick={() => closeConfirmation(true)}>
+                Confirm
+              </button>
+            </div>
+          </div>
         </div>
       )}
       <footer className="app-footer">

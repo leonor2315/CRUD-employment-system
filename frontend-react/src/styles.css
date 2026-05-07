@@ -751,6 +751,43 @@ textarea {
   text-decoration: underline;
 }
 
+.confirm-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.45);
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+  padding: 16px;
+}
+
+.confirm-card {
+  width: min(460px, 100%);
+  background: #ffffff;
+  border: 1px solid #dbe4f0;
+  border-radius: 12px;
+  box-shadow: 0 18px 38px rgba(15, 23, 42, 0.28);
+  padding: 18px;
+  display: grid;
+  gap: 12px;
+}
+
+.confirm-card h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.confirm-card p {
+  margin: 0;
+  color: #475569;
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
 @media (max-width: 720px) {
   /* Mobile spacing adjustments. */
   .container {
@@ -813,6 +850,16 @@ textarea {
 
 [data-theme="dark"] .app-footer a {
   color: #86efac;
+}
+
+[data-theme="dark"] .confirm-card {
+  background: #111827;
+  border-color: #334155;
+}
+
+[data-theme="dark"] .confirm-card h3,
+[data-theme="dark"] .confirm-card p {
+  color: #e5e7eb;
 }
 
 @media print {
