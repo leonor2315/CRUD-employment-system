@@ -341,11 +341,15 @@ const moveFocusByOffset = (offset) => {
 export default function App() {
   const currentYear = new Date().getFullYear();
   const savedAuth = readStored(AUTH_SESSION_KEY, {});
+  const normalizedSavedUsername =
+    String(savedAuth.username || "").trim().toLowerCase() === "administration"
+      ? "humanresource"
+      : savedAuth.username;
   // Core app state.
   const [employees, setEmployees] = useState([]);
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
-  const [username, setUsername] = useState(savedAuth.username || "administration");
+  const [username, setUsername] = useState(normalizedSavedUsername || "humanresource");
   const [password, setPassword] = useState(savedAuth.password || "HRMI056");
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(savedAuth.isAuthenticated));
   const [form, setForm] = useState({ ...defaultForm, customFields: {} });
@@ -374,7 +378,7 @@ export default function App() {
   const confirmResolverRef = useRef(null);
   const usernameInputRef = useRef(null);
   const passwordInputRef = useRef(null);
-  const isAdmin = username.trim().toLowerCase() === "administration";
+  const isAdmin = username.trim().toLowerCase() === "humanresource";
   const requestConfirmation = (message) => new Promise((resolve) => {
     confirmResolverRef.current = resolve;
     setConfirmDialogMessage(message);
