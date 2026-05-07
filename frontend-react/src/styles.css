@@ -79,7 +79,7 @@ h1 {
   background: #ffffffee;
   backdrop-filter: blur(2px);
   padding: 20px;
-  min-height: 1000px;
+  min-height: 500px;
   border-radius: 14px;
   margin-bottom: 16px;
   border: 1px solid #e5f4ce;
@@ -123,6 +123,7 @@ h1 {
 #records.card {
   overflow-x: auto;
   overflow-y: visible;
+  min-height: 360px;
 }
 
 .section-head {
@@ -812,6 +813,51 @@ textarea {
 
 [data-theme="dark"] .app-footer a {
   color: #86efac;
+}
+
+@media print {
+  body {
+    background: #fff !important;
+  }
+
+  .hero,
+  .session-card,
+  .floating-actions,
+  .app-footer,
+  .no-print {
+    display: none !important;
+  }
+
+  .container {
+    max-width: 100%;
+    padding: 0;
+  }
+
+  .card,
+  .employee-detail-card {
+    border: 0 !important;
+    box-shadow: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: 0;
+    background: #fff !important;
+  }
+
+  .detail-passport-pin {
+    position: static;
+    width: 220px;
+    margin: 0 0 12px auto;
+    break-inside: avoid;
+  }
+
+  .detail-list-with-passport {
+    margin-right: 0;
+  }
+
+  .detail-item,
+  .detail-media-item {
+    break-inside: avoid;
+  }
 }
 
 [data-theme="dark"] input,

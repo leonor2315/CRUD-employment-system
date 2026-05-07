@@ -340,8 +340,8 @@ export default function App() {
   const [employees, setEmployees] = useState([]);
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
-  const [username, setUsername] = useState(savedAuth.username || "admin");
-  const [password, setPassword] = useState(savedAuth.password || "admin123");
+  const [username, setUsername] = useState(savedAuth.username || "Administration");
+  const [password, setPassword] = useState(savedAuth.password || "HMRI056");
   const [isAuthenticated, setIsAuthenticated] = useState(Boolean(savedAuth.isAuthenticated));
   const [form, setForm] = useState({ ...defaultForm, customFields: {} });
   const [customDefs, setCustomDefs] = useState(() => normalizeCustomDefs(readStored(CUSTOM_KEY, [])));
@@ -363,6 +363,7 @@ export default function App() {
   const [listPageSize, setListPageSize] = useState(10);
   const [selectedEmployeeNo, setSelectedEmployeeNo] = useState("");
   const [selectedListEmployeeNo, setSelectedListEmployeeNo] = useState("");
+  const [editEmployeeNo, setEditEmployeeNo] = useState("");
   const usernameInputRef = useRef(null);
   const passwordInputRef = useRef(null);
   const isAdmin = username.trim().toLowerCase() === "admin";
@@ -596,6 +597,7 @@ export default function App() {
     setListPageSize(10);
     setSelectedEmployeeNo("");
     setSelectedListEmployeeNo("");
+    setEditEmployeeNo("");
     localStorage.removeItem(AUTH_SESSION_KEY);
   };
 
@@ -650,6 +652,44 @@ export default function App() {
   const deleteEmployee = async (employeeNo) => {
     const res = await fetch(`${JAVA_API}/${employeeNo}`, { method: "DELETE", headers: authHeader() });
     if (!res.ok) return setError("Delete failed. Ensure role is ADMIN/MANAGER.");
+    loadData();
+  };
+  const startEditEmployee = (employee) => {
+    if (!employee?.employeeNo) return;
+    setForm({
+      ...defaultForm,
+      ...employee,
+      employeeNo: employee.employeeNo,
+      providentFund: employee.providentFund ? "Yes" : "No",
+      cellPhone: employee.cellPhone ? "Yes" : "No",
+      lunch: employee.lunch ? "Yes" : "No",
+      customFields: employee.customFields || parseCustomJson(employee.customFieldsJson)
+    });
+    setEditEmployeeNo(employee.employeeNo);
+    setCurrentPage("employee-edit");
+    setError("");
+  };
+  const saveEditedEmployee = async () => {
+    if (!editEmployeeNo) return;
+    const shouldSave = window.confirm("Save all changes to this employee profile?");
+    if (!shouldSave) return;
+    const res = await fetch(`${JAVA_API}/${editEmployeeNo}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...authHeader() },
+      body: JSON.stringify(toPayload({ ...form, employeeNo: editEmployeeNo }))
+    });
+    if (!res.ok) {
+      if (res.status === 401 || res.status === 403) {
+        return setError("Save failed: this account is not authorized for update.");
+      }
+      const errorText = await res.text();
+      return setError(`Save failed: ${errorText || "invalid data in this record."}`);
+    }
+    setError("");
+    setCurrentPage("dashboard");
+    setEmployeeSearch(editEmployeeNo);
+    setSelectedEmployeeNo(editEmployeeNo);
+    setEditEmployeeNo("");
     loadData();
   };
 
@@ -780,6 +820,10 @@ export default function App() {
         [mediaKey]: ""
       }
     }));
+  };
+  const exportEmployeeDetailPdf = () => {
+    // Browser print dialog supports "Save as PDF" on Windows.
+    window.print();
   };
 
   // Dynamic field renderer used by the profile page.
@@ -943,7 +987,7 @@ export default function App() {
       <main className="login-shell" onKeyDownCapture={handleKeyboardNavigation}>
         <section className="login-card">
           <p className="eyebrow"><span className="telenergy">TELENERGY</span> staff database</p>
-          <h1>Admin Login</h1>
+          <h1>HR Login</h1>
           <p className="hero-subtitle">Sign in first to access your employee's records.</p>
           {error && <p className="error">{error}</p>}
           <div className="login-grid">
@@ -985,9 +1029,10 @@ export default function App() {
       <header className="hero">
         <p className="eyebrow"><span className="telenergy">TELENERGY</span> staff database</p>
         <h1>
-          {currentPage === "dashboard" && "Admin Employee Work Dashboard"}
+          {currentPage === "dashboard" && "HR Database Dashboard"}
           {currentPage === "employee-list" && "Employee List View"}
           {currentPage === "employee-detail" && "Employee Detail View"}
+          {currentPage === "employee-edit" && "Edit Employee Details"}
           {currentPage === "designer" && "Admin Form Designer"}
           {currentPage === "profile" && "Create Employee Profile"}
         </h1>
@@ -995,6 +1040,7 @@ export default function App() {
           {currentPage === "dashboard" && "Manage complete employee HR profiles, employment status, benefits, contact details, and custom fields."}
           {currentPage === "employee-list" && "Spreadsheet view of employees based on the selected dashboard filter."}
           {currentPage === "employee-detail" && "Complete employee profile details in list form."}
+          {currentPage === "employee-edit" && "Update employee details and click Save to lock changes in."}
           {currentPage === "designer" && "Re-order fields and add custom employee information fields."}
           {currentPage === "profile" && "Capture a complete employee profile with all required information."}
         </p>
@@ -1016,15 +1062,15 @@ export default function App() {
         <div className="summary-grid">
           <section className="metric-card">
             <p>Total Employees</p>
-            <strong>{summary.totalEmployees === 0 ? "-" : summary.totalEmployees}</strong>
+            <strong>{summary.totalEmployees ?? 0}</strong>
           </section>
           <section className="metric-card">
             <p>Engaged Employees</p>
-            <strong>{summary.activeEmployees === 0 ? "-" : summary.activeEmployees}</strong>
+            <strong>{summary.activeEmployees ?? 0}</strong>
           </section>
           <section className="metric-card">
             <p>On Payroll</p>
-            <strong>{summary.onPayrollEmployees === 0 ? "-" : summary.onPayrollEmployees}</strong>
+            <strong>{summary.onPayrollEmployees ?? 0}</strong>
           </section>
           {isAdmin && (
             <section className="metric-card view-employee-card">
@@ -1081,14 +1127,91 @@ export default function App() {
               <p><strong>Job Title:</strong> {selectedEmployee.jobTitle}</p>
               <p><strong>Location:</strong> {selectedEmployee.location}</p>
               <div className="row">
-                <select value={selectedEmployee.status} onChange={(e) => setEmployees((prev) => prev.map((item) => item.employeeNo === selectedEmployee.employeeNo ? { ...item, status: e.target.value } : item))}>
-                  {FIELD_DEFS.status.options.map((opt) => <option key={opt}>{opt}</option>)}
-                </select>
-                <button className="btn btn-secondary" onClick={() => updateEmployee(selectedEmployee)}>Update</button>
+                <button className="btn btn-secondary" onClick={() => startEditEmployee(selectedEmployee)}>Edit Details</button>
                 <button className="btn btn-danger" onClick={() => deleteEmployee(selectedEmployee.employeeNo)}>Delete</button>
               </div>
             </div>
           )}
+        </section>
+      )}
+
+      {currentPage === "employee-edit" && isAdmin && editEmployeeNo && (
+        <section className="card">
+          <div className="section-head">
+            <h2>Edit Employee Profile</h2>
+            <small>Employee No: {editEmployeeNo}</small>
+          </div>
+          <div className="profile-sections">
+            {sectionedBaseFields.map((section) => (
+              <section key={section.key} className="profile-group">
+                <h3>{section.title}</h3>
+                <div className="grid profile-group-grid">
+                  {section.fields.map((key) => renderField(key))}
+                </div>
+              </section>
+            ))}
+
+            {uncategorizedFields.length > 0 && (
+              <section className="profile-group">
+                <h3>Other Info</h3>
+                <div className="grid profile-group-grid">
+                  {uncategorizedFields.map((key) => renderField(key))}
+                </div>
+              </section>
+            )}
+
+            {customOrderKeys.length > 0 && (
+              <section className="profile-group">
+                <h3>Custom Info</h3>
+                <div className="grid profile-group-grid">
+                  {customOrderKeys.map((key) => renderField(key))}
+                </div>
+              </section>
+            )}
+
+            <section className="profile-group">
+              <h3>Identity Images</h3>
+              <div className="grid profile-group-grid">
+                <div className="field-block media-upload-block">
+                  <label className="field-label">Passport Picture</label>
+                  <input type="file" accept="image/*" onChange={(e) => handleMediaUpload(MEDIA_FIELD_KEYS.passportPhoto, e.target.files?.[0])} />
+                  {form.customFields?.[MEDIA_FIELD_KEYS.passportPhoto] && (
+                    <div className="media-preview-card">
+                      <img src={form.customFields[MEDIA_FIELD_KEYS.passportPhoto]} alt="Passport preview" className="media-preview-image" />
+                      <button className="btn btn-secondary" type="button" onClick={() => clearMediaUpload(MEDIA_FIELD_KEYS.passportPhoto)}>Remove</button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="field-block media-upload-block">
+                  <label className="field-label">Ghana Card Picture (Front)</label>
+                  <input type="file" accept="image/*" onChange={(e) => handleMediaUpload(MEDIA_FIELD_KEYS.ghanaCardFront, e.target.files?.[0])} />
+                  {form.customFields?.[MEDIA_FIELD_KEYS.ghanaCardFront] && (
+                    <div className="media-preview-card">
+                      <img src={form.customFields[MEDIA_FIELD_KEYS.ghanaCardFront]} alt="Ghana card front preview" className="media-preview-image" />
+                      <button className="btn btn-secondary" type="button" onClick={() => clearMediaUpload(MEDIA_FIELD_KEYS.ghanaCardFront)}>Remove</button>
+                    </div>
+                  )}
+                </div>
+
+                <div className="field-block media-upload-block">
+                  <label className="field-label">Ghana Card Picture (Back)</label>
+                  <input type="file" accept="image/*" onChange={(e) => handleMediaUpload(MEDIA_FIELD_KEYS.ghanaCardBack, e.target.files?.[0])} />
+                  {form.customFields?.[MEDIA_FIELD_KEYS.ghanaCardBack] && (
+                    <div className="media-preview-card">
+                      <img src={form.customFields[MEDIA_FIELD_KEYS.ghanaCardBack]} alt="Ghana card back preview" className="media-preview-image" />
+                      <button className="btn btn-secondary" type="button" onClick={() => clearMediaUpload(MEDIA_FIELD_KEYS.ghanaCardBack)}>Remove</button>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </section>
+
+            <div className="profile-create-actions">
+              <button className="btn btn-primary" onClick={saveEditedEmployee}>Save Changes</button>
+              <button className="btn btn-secondary" onClick={() => { setCurrentPage("dashboard"); setEditEmployeeNo(""); }}>Cancel</button>
+            </div>
+          </div>
         </section>
       )}
 
@@ -1180,8 +1303,9 @@ export default function App() {
             <h2>{selectedListEmployee.fullName || selectedListEmployee.employeeNo}</h2>
             <small>Employee No: {selectedListEmployee.employeeNo}</small>
           </div>
-          <div className="row">
+          <div className="row no-print">
             <button className="btn btn-secondary" onClick={() => setCurrentPage("employee-list")}>Back to Employee List</button>
+            <button className="btn btn-primary" type="button" onClick={exportEmployeeDetailPdf}>Export to PDF</button>
           </div>
           <div className="detail-list detail-list-with-passport">
             {BASE_ORDER.map((fieldKey) => (
