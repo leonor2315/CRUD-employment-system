@@ -37,3 +37,13 @@ Thumbs.db
 *.log
 npm-debug.log*
 yarn-error.log*
+
+# GitHub Pages / Jekyll cache files
+_site/
+.sass-cache/
+.jekyll-cache/
+.jekyll-metadata
+
+# Ruby/bundler files if GitHub Pages tooling is used locally
+/vendor
+Gemfile.lock
