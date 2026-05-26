@@ -4,8 +4,9 @@ import com.hvac.workflow.model.TechnicianRecord;
 import com.hvac.workflow.model.TechnicianRequest;
 import com.hvac.workflow.service.EmployeeWorkService;
 import jakarta.validation.Valid;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
-import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -13,6 +14,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -20,7 +22,6 @@ import java.util.List;
 
 @RestController
 @RequestMapping("/api/admin")
-@CrossOrigin(origins = "*")
 public class AdminController {
 
     private final EmployeeWorkService workService;
@@ -33,6 +34,24 @@ public class AdminController {
     public List<TechnicianRecord> allEmployeeWork() {
         // Admin list endpoint for full employee records.
         return workService.getAll();
+    }
+
+    @GetMapping("/employee-work/search")
+    public Page<TechnicianRecord> searchEmployeeWork(
+            @RequestParam(required = false) String q,
+            @RequestParam(required = false) String status,
+            @RequestParam(required = false) String payrollStatus,
+            @RequestParam(required = false) String location,
+            @RequestParam(required = false) String jobGroup,
+            @RequestParam(defaultValue = "false") boolean archived,
+            Pageable pageable
+    ) {
+        return workService.search(archived, q, status, payrollStatus, location, jobGroup, pageable);
+    }
+
+    @GetMapping("/employee-work/archived")
+    public List<TechnicianRecord> archivedEmployeeWork() {
+        return workService.getArchived();
     }
 
     @GetMapping("/employee-work/{employeeNo}")
@@ -57,7 +76,12 @@ public class AdminController {
     @DeleteMapping("/employee-work/{employeeNo}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteEmployeeWork(@PathVariable String employeeNo) {
-        // Admin delete endpoint.
+        // Admin archive endpoint. Records remain recoverable.
         workService.delete(employeeNo);
+    }
+
+    @PostMapping("/employee-work/{employeeNo}/restore")
+    public TechnicianRecord restoreEmployeeWork(@PathVariable String employeeNo) {
+        return workService.restore(employeeNo);
     }
 }

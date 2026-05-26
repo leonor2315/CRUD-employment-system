@@ -1,14 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 
 // Backend endpoints used by the dashboard and analytics cards.
-const JAVA_API = "http://127.0.0.1:8080/api/admin/employee-work";
-const PYTHON_API = "http://127.0.0.1:8000/api/analytics/work-summary";
+const trimTrailingSlash = (value) => String(value || "").replace(/\/+$/, "");
+const API_BASE_URL = trimTrailingSlash(import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8080");
+const ANALYTICS_API_BASE_URL = trimTrailingSlash(import.meta.env.VITE_ANALYTICS_API_BASE_URL || API_BASE_URL);
+const AUTH_API = `${API_BASE_URL}/api/auth/me`;
+const ADMIN_API = `${API_BASE_URL}/api/admin/employee-work`;
+const USER_API = `${API_BASE_URL}/api/admin/users`;
+const AUDIT_API = `${API_BASE_URL}/api/admin/audit`;
+const SYSTEM_STATUS_API = `${API_BASE_URL}/api/admin/system/status`;
+const DIRECTOR_API = `${API_BASE_URL}/api/director/employee-work`;
+const ANALYTICS_API = `${ANALYTICS_API_BASE_URL}/api/analytics/work-summary`;
 // Local storage keys for remembering form layout/custom fields between sessions.
 const ORDER_KEY = "employee-form-order-v1";
 const CUSTOM_KEY = "employee-custom-fields-v1";
 const THEME_KEY = "employee-ui-theme-v1";
 const AUTH_SESSION_KEY = "employee-auth-session-v1";
 const LOCATION_OPTIONS_KEY = "employee-location-options-v1";
+const PASSWORD_RULE_TEXT = "Use at least 8 characters with letters and numbers.";
 const CHECKLIST_OPTIONS = ["Cellphone", "Laptop", "Car", "Simcard", "Fuelcard", "Insurance card"];
 const MEDIA_FIELD_KEYS = {
   passportPhoto: "passportPhotoBase64",
@@ -224,6 +233,8 @@ const getInitialTheme = () => {
   return "light";
 };
 
+const getEmployeeApiForRole = (role) => (role === "DIRECTOR" ? DIRECTOR_API : ADMIN_API);
+
 const calculateAgeFromDob = (dob) => {
   if (!dob) return "";
   const birthDate = new Date(dob);
@@ -319,6 +330,7 @@ const toCsvCell = (value) => {
   const escaped = normalized.replace(/"/g, "\"\"");
   return `"${escaped}"`;
 };
+const isStrongPassword = (value) => /^(?=.*[A-Za-z])(?=.*\d).{8,}$/.test(value || "");
 const KEYBOARD_NAV_SELECTOR = "input, select, textarea, button, a[href]";
 
 const getFocusableElements = () =>
@@ -344,14 +356,18 @@ export default function App() {
   const normalizedSavedUsername =
     String(savedAuth.username || "").trim().toLowerCase() === "administration"
       ? "humanresource"
+      : String(savedAuth.username || "").trim().toLowerCase() === "managingdirector"
+        ? "MD"
       : savedAuth.username;
   // Core app state.
   const [employees, setEmployees] = useState([]);
   const [summary, setSummary] = useState(null);
   const [error, setError] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
   const [username, setUsername] = useState(normalizedSavedUsername || "humanresource");
-  const [password, setPassword] = useState(savedAuth.password || "HRMI056");
-  const [isAuthenticated, setIsAuthenticated] = useState(Boolean(savedAuth.isAuthenticated));
+  const [password, setPassword] = useState("");
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [userRole, setUserRole] = useState("");
   const [form, setForm] = useState({ ...defaultForm, customFields: {} });
   const [customDefs, setCustomDefs] = useState(() => normalizeCustomDefs(readStored(CUSTOM_KEY, [])));
   const [fieldOrder, setFieldOrder] = useState(() => readStored(ORDER_KEY, BASE_ORDER));
@@ -373,12 +389,26 @@ export default function App() {
   const [selectedEmployeeNo, setSelectedEmployeeNo] = useState("");
   const [selectedListEmployeeNo, setSelectedListEmployeeNo] = useState("");
   const [editEmployeeNo, setEditEmployeeNo] = useState("");
+  const [archivedEmployees, setArchivedEmployees] = useState([]);
+  const [auditLogs, setAuditLogs] = useState([]);
+  const [userAccounts, setUserAccounts] = useState([]);
+  const [systemStatus, setSystemStatus] = useState(null);
+  const [newUserForm, setNewUserForm] = useState({
+    username: "",
+    displayName: "",
+    role: "DIRECTOR",
+    password: "",
+    enabled: true
+  });
   const [confirmDialogOpen, setConfirmDialogOpen] = useState(false);
   const [confirmDialogMessage, setConfirmDialogMessage] = useState("");
   const confirmResolverRef = useRef(null);
   const usernameInputRef = useRef(null);
   const passwordInputRef = useRef(null);
-  const isAdmin = username.trim().toLowerCase() === "humanresource";
+  const isAdmin = userRole === "ADMIN";
+  const isDirector = userRole === "DIRECTOR";
+  const canManageEmployees = isAdmin;
+  const canViewEmployeeDirectory = isAdmin || isDirector;
   const requestConfirmation = (message) => new Promise((resolve) => {
     confirmResolverRef.current = resolve;
     setConfirmDialogMessage(message);
@@ -421,12 +451,8 @@ export default function App() {
   useEffect(() => localStorage.setItem(CUSTOM_KEY, JSON.stringify(customDefs)), [customDefs]);
   useEffect(() => localStorage.setItem(ORDER_KEY, JSON.stringify(fieldOrder)), [fieldOrder]);
   useEffect(() => {
-    localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({
-      isAuthenticated,
-      username,
-      password
-    }));
-  }, [isAuthenticated, username, password]);
+    localStorage.setItem(AUTH_SESSION_KEY, JSON.stringify({ username }));
+  }, [username]);
   useEffect(() => localStorage.setItem(LOCATION_OPTIONS_KEY, JSON.stringify(locationOptions)), [locationOptions]);
   useEffect(() => {
     const safeTheme = theme === "dark" ? "dark" : "light";
@@ -475,7 +501,7 @@ export default function App() {
     return (emp.employeeNo || "").toLowerCase().includes(q) || (emp.fullName || "").toLowerCase().includes(q);
   }).slice(0, 8);
   const selectedEmployee = employees.find((emp) => emp.employeeNo === selectedEmployeeNo);
-  const selectedListEmployee = employees.find((emp) => emp.employeeNo === selectedListEmployeeNo);
+  const selectedListEmployee = [...employees, ...archivedEmployees].find((emp) => emp.employeeNo === selectedListEmployeeNo);
   const selectedPassportImage = selectedListEmployee
     ? (
       selectedListEmployee.customFields?.[MEDIA_FIELD_KEYS.passportPhoto]
@@ -486,6 +512,7 @@ export default function App() {
     : "";
   const employeeFilterOptions = [
     { value: "all", label: "All Employees" },
+    { value: "archived", label: "Archived Employees" },
     { value: "married", label: "Married Employees" },
     { value: "single", label: "Single Employees" },
     { value: "engaged", label: "Engaged Employees" },
@@ -497,8 +524,10 @@ export default function App() {
     { value: "table_top", label: "Table Top Employees" }
   ];
   const selectedEmployeeFilter = employeeFilterOptions.find((opt) => opt.value === employeeListFilter) || employeeFilterOptions[0];
-  const adminVisibleEmployees = employees.filter((emp) => {
+  const sourceEmployees = employeeListFilter === "archived" ? archivedEmployees : employees;
+  const adminVisibleEmployees = sourceEmployees.filter((emp) => {
     if (employeeListFilter === "all") return true;
+    if (employeeListFilter === "archived") return true;
     if (employeeListFilter === "married") return (emp.maritalStatus || "").toLowerCase() === "married";
     if (employeeListFilter === "single") return (emp.maritalStatus || "").toLowerCase() === "single";
     if (employeeListFilter === "engaged") return (emp.status || "").toLowerCase() === "engaged";
@@ -527,6 +556,10 @@ export default function App() {
   const totalListPages = Math.max(1, Math.ceil(searchedEmployeeList.length / listPageSize));
   const safeListPage = Math.min(listPage, totalListPages);
   const paginatedEmployeeList = searchedEmployeeList.slice((safeListPage - 1) * listPageSize, safeListPage * listPageSize);
+  const missingDocumentCount = employees.filter((emp) =>
+    DOCUMENT_FIELD_KEYS.size > 0 && Array.from(DOCUMENT_FIELD_KEYS).some((fieldKey) => !emp[fieldKey])
+  ).length;
+  const recentAuditLogs = auditLogs.slice(0, 5);
 
   const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
   const fetchWithRetry = async (url, options = {}, retries = 3, delayMs = 1200) => {
@@ -542,29 +575,55 @@ export default function App() {
     throw lastError;
   };
 
-  // Fetch HR records and analytics summary in parallel.
-  const loadData = async () => {
+  // Fetch employee records and analytics summary in parallel.
+  const loadData = async (activeRole = userRole) => {
     try {
+      const activeEmployeeApi = getEmployeeApiForRole(activeRole);
       const [employeeRes, summaryRes] = await Promise.all([
-        fetchWithRetry(JAVA_API, { headers: authHeader() }),
-        fetchWithRetry(PYTHON_API)
+        fetchWithRetry(activeEmployeeApi, { headers: authHeader() }),
+        fetchWithRetry(ANALYTICS_API, { headers: authHeader() })
       ]);
-      if (!employeeRes.ok || !summaryRes.ok) throw new Error("Unable to load admin data. Check credentials and running services.");
+      if (!employeeRes.ok || !summaryRes.ok) throw new Error("Unable to load employee data. Check credentials and running services.");
       const employeeData = await employeeRes.json();
       const summaryData = await summaryRes.json();
       setEmployees(employeeData.map((emp) => ({ ...emp, customFields: parseCustomJson(emp.customFieldsJson) })));
       setSummary(summaryData);
       setError("");
+      setStatusMessage("Data loaded successfully.");
+      if (activeRole === "ADMIN") {
+        await loadAdminExtras();
+      }
     } catch (err) {
       setError(err.message || "Failed to fetch. Please try again.");
     }
   };
 
-  useEffect(() => {
-    if (isAuthenticated) {
-      loadData();
+  const loadAdminExtras = async () => {
+    try {
+      const [usersRes, archivedRes, auditRes, statusRes] = await Promise.all([
+        fetchWithRetry(USER_API, { headers: authHeader() }),
+        fetchWithRetry(`${ADMIN_API}/archived`, { headers: authHeader() }),
+        fetchWithRetry(AUDIT_API, { headers: authHeader() }),
+        fetchWithRetry(SYSTEM_STATUS_API, { headers: authHeader() })
+      ]);
+      if (usersRes.ok) setUserAccounts(await usersRes.json());
+      if (archivedRes.ok) {
+        const archivedData = await archivedRes.json();
+        setArchivedEmployees(archivedData.map((emp) => ({ ...emp, customFields: parseCustomJson(emp.customFieldsJson) })));
+      }
+      if (auditRes.ok) setAuditLogs(await auditRes.json());
+      if (statusRes.ok) setSystemStatus(await statusRes.json());
+    } catch {
+      setStatusMessage("Core data loaded, but admin extras could not be refreshed.");
     }
-  }, [isAuthenticated]);
+  };
+
+  const loadEmployeeAudit = async (employeeNo) => {
+    if (!canManageEmployees || !employeeNo) return;
+    const res = await fetch(`${AUDIT_API}/employee/${employeeNo}`, { headers: authHeader() });
+    if (res.ok) setAuditLogs(await res.json());
+  };
+
   useEffect(() => { setListPage(1); }, [employeeListFilter, listSearch, listPageSize]);
   // Keep order list aligned when custom fields are added/removed.
   useEffect(() => { if (JSON.stringify(normalizedOrder) !== JSON.stringify(fieldOrder)) setFieldOrder(normalizedOrder); }, [customDefs]);
@@ -595,12 +654,19 @@ export default function App() {
   const handleLogin = async () => {
     setError("");
     try {
-      const res = await fetch(JAVA_API, { headers: authHeader() });
+      const res = await fetch(AUTH_API, { headers: authHeader() });
       if (!res.ok) {
         throw new Error("Login failed. Please check username/password.");
       }
+      const authData = await res.json();
+      const roles = Array.isArray(authData.roles) ? authData.roles : [];
+      const activeRole = roles.includes("ADMIN") ? "ADMIN" : roles.includes("DIRECTOR") ? "DIRECTOR" : "";
+      if (!activeRole) {
+        throw new Error("This account is not allowed to access the employee information system.");
+      }
+      await loadData(activeRole);
+      setUserRole(activeRole);
       setIsAuthenticated(true);
-      loadData();
     } catch (err) {
       setError(err.message || "Login failed.");
     }
@@ -611,11 +677,12 @@ export default function App() {
     const shouldLogout = await requestConfirmation("Are you sure you want to log out?");
     if (!shouldLogout) return;
     setIsAuthenticated(false);
+    setUserRole("");
+    setPassword("");
     setEmployees([]);
     setSummary(null);
     setError("");
     setCurrentPage("dashboard");
-    setSecondsLeft(SESSION_TIMEOUT_SECONDS);
     setEmployeeListFilter("all");
     setEmployeeSearch("");
     setListSearch("");
@@ -629,10 +696,11 @@ export default function App() {
 
   // Create a new employee profile.
   const createEmployee = async () => {
+    if (!canManageEmployees) return setError("This account can view employee records but cannot create profiles.");
     const shouldCreate = await requestConfirmation("Are you sure you want to create this employee profile?");
     if (!shouldCreate) return;
 
-    const res = await fetch(JAVA_API, { method: "POST", headers: { "Content-Type": "application/json", ...authHeader() }, body: JSON.stringify(toPayload(form)) });
+    const res = await fetch(ADMIN_API, { method: "POST", headers: { "Content-Type": "application/json", ...authHeader() }, body: JSON.stringify(toPayload(form)) });
     if (!res.ok) {
       const errorText = await res.text();
       return setError(`Create failed: ${errorText || "please check required fields and Employee No uniqueness."}`);
@@ -643,6 +711,7 @@ export default function App() {
 
   // Update an employee and backfill legacy fields for compatibility.
   const updateEmployee = async (emp) => {
+    if (!canManageEmployees) return setError("This account can view employee records but cannot update profiles.");
     const shouldUpdate = await requestConfirmation(`Update employee ${emp.employeeNo || ""}?`);
     if (!shouldUpdate) return;
     const legacyName = emp.legacyEmployeeName || emp.fullName || "";
@@ -651,7 +720,7 @@ export default function App() {
     const safeLastName = emp.lastName || nameParts[nameParts.length - 1] || "Unknown";
     const safeFullName = emp.fullName || legacyName || `${safeFirstName} ${safeLastName}`.trim();
 
-    const res = await fetch(`${JAVA_API}/${emp.employeeNo}`, {
+    const res = await fetch(`${ADMIN_API}/${emp.employeeNo}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", ...authHeader() },
       body: JSON.stringify(toPayload({
@@ -678,10 +747,11 @@ export default function App() {
 
   // Delete a profile by employee number.
   const deleteEmployee = async (employeeNo) => {
+    if (!canManageEmployees) return setError("This account can view employee records but cannot delete profiles.");
     const shouldDelete = await requestConfirmation(`Delete employee ${employeeNo}? This cannot be undone.`);
     if (!shouldDelete) return;
-    const res = await fetch(`${JAVA_API}/${employeeNo}`, { method: "DELETE", headers: authHeader() });
-    if (!res.ok) return setError("Delete failed. Ensure role is ADMIN/MANAGER.");
+    const res = await fetch(`${ADMIN_API}/${employeeNo}`, { method: "DELETE", headers: authHeader() });
+    if (!res.ok) return setError("Delete failed. Ensure role is ADMIN.");
     loadData();
   };
   const startEditEmployee = (employee) => {
@@ -701,9 +771,10 @@ export default function App() {
   };
   const saveEditedEmployee = async () => {
     if (!editEmployeeNo) return;
+    if (!canManageEmployees) return setError("This account can view employee records but cannot update profiles.");
     const shouldSave = await requestConfirmation("Save all changes to this employee profile?");
     if (!shouldSave) return;
-    const res = await fetch(`${JAVA_API}/${editEmployeeNo}`, {
+    const res = await fetch(`${ADMIN_API}/${editEmployeeNo}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json", ...authHeader() },
       body: JSON.stringify(toPayload({ ...form, employeeNo: editEmployeeNo }))
@@ -860,9 +931,15 @@ export default function App() {
   const exportEmployeeDetailPdf = async () => {
     window.print();
   };
-  const exportEmployeesCsv = () => {
+  const exportEmployeesCsv = async () => {
+    if (canManageEmployees) {
+      await fetch(`${AUDIT_API}/export?details=${encodeURIComponent(`CSV export for ${selectedEmployeeFilter.label}`)}`, {
+        method: "POST",
+        headers: authHeader()
+      });
+    }
     const customFieldKeys = Array.from(
-      new Set(employees.flatMap((emp) => Object.keys(emp.customFields || {})))
+      new Set(searchedEmployeeList.flatMap((emp) => Object.keys(emp.customFields || {})))
     ).sort((a, b) => a.localeCompare(b));
     const columns = [...BASE_ORDER, ...customFieldKeys.map((key) => `custom:${key}`)];
     const header = columns.map((key) => (
@@ -870,7 +947,7 @@ export default function App() {
         ? key.replace("custom:", "Custom - ")
         : FIELD_DEFS[key]?.label || key
     ));
-    const rows = employees.map((emp) => columns.map((key) => {
+    const rows = searchedEmployeeList.map((emp) => columns.map((key) => {
       if (key.startsWith("custom:")) {
         const customKey = key.replace("custom:", "");
         return toCsvCell(emp.customFields?.[customKey] ?? "");
@@ -890,6 +967,62 @@ export default function App() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
+    loadAdminExtras();
+  };
+  const createUserAccount = async () => {
+    if (!newUserForm.username || !newUserForm.displayName || !newUserForm.password) {
+      return setError("Username, display name, and password are required.");
+    }
+    if (!isStrongPassword(newUserForm.password)) {
+      return setError(PASSWORD_RULE_TEXT);
+    }
+    const res = await fetch(USER_API, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader() },
+      body: JSON.stringify(newUserForm)
+    });
+    if (!res.ok) return setError(`User create failed: ${await res.text()}`);
+    setNewUserForm({ username: "", displayName: "", role: "DIRECTOR", password: "", enabled: true });
+    setStatusMessage("User account created.");
+    setError("");
+    loadAdminExtras();
+  };
+  const resetUserPassword = async (user) => {
+    const passwordValue = window.prompt(`New password for ${user.username}. ${PASSWORD_RULE_TEXT}`);
+    if (!passwordValue) return;
+    if (!isStrongPassword(passwordValue)) {
+      return setError(PASSWORD_RULE_TEXT);
+    }
+    const res = await fetch(`${USER_API}/${user.id}/reset-password`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...authHeader() },
+      body: JSON.stringify({ password: passwordValue })
+    });
+    if (!res.ok) return setError(`Password reset failed: ${await res.text()}`);
+    setStatusMessage(`Password reset for ${user.username}.`);
+  };
+  const toggleUserEnabled = async (user) => {
+    const res = await fetch(`${USER_API}/${user.id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", ...authHeader() },
+      body: JSON.stringify({
+        username: user.username,
+        displayName: user.displayName || user.username,
+        role: user.role,
+        enabled: !user.enabled
+      })
+    });
+    if (!res.ok) return setError(`User update failed: ${await res.text()}`);
+    loadAdminExtras();
+  };
+  const restoreEmployee = async (employeeNo) => {
+    const shouldRestore = await requestConfirmation(`Restore employee ${employeeNo}?`);
+    if (!shouldRestore) return;
+    const res = await fetch(`${ADMIN_API}/${employeeNo}/restore`, { method: "POST", headers: authHeader() });
+    if (!res.ok) return setError(`Restore failed: ${await res.text()}`);
+    setEmployeeListFilter("all");
+    setStatusMessage(`Employee ${employeeNo} restored.`);
+    await loadData(userRole);
   };
 
   // Dynamic field renderer used by the profile page.
@@ -1052,7 +1185,10 @@ export default function App() {
     return (
       <main className="login-shell" onKeyDownCapture={handleKeyboardNavigation}>
         <section className="login-card">
-          <p className="eyebrow"><span className="telenergy">TELENERGY</span> staff database</p>
+          <div className="brand-strip">
+            <img className="brand-logo brand-logo-login" src="/telenergy-logo-transparent.png" alt="TELENERGY" />
+            <span>Staff database</span>
+          </div>
           <h1>HR Login</h1>
           <p className="hero-subtitle">Sign in first to access your employee's records.</p>
           {error && <p className="error">{error}</p>}
@@ -1091,38 +1227,123 @@ export default function App() {
 
   return (
     // Authenticated application shell.
-    <main className="container" onKeyDownCapture={handleKeyboardNavigation}>
+    <div className="app-frame" onKeyDownCapture={handleKeyboardNavigation}>
+      <aside className="app-sidebar" aria-label="Main navigation">
+        <div className="sidebar-brand">
+          <img className="brand-logo sidebar-logo" src="/telenergy-logo-transparent.png" alt="TELENERGY" />
+          <small>Staff database</small>
+        </div>
+
+        <div className="sidebar-user">
+          <small>Signed in as</small>
+          <strong>{isDirector ? "Managing Director" : "Human Resource"}</strong>
+          <span>{username}</span>
+        </div>
+
+        <nav className="sidebar-nav">
+          <button
+            className={`sidebar-link ${currentPage === "dashboard" ? "is-active" : ""}`}
+            type="button"
+            onClick={() => setCurrentPage("dashboard")}
+          >
+            Dashboard
+          </button>
+          {canViewEmployeeDirectory && (
+            <button
+              className={`sidebar-link ${currentPage === "employee-list" || currentPage === "employee-detail" ? "is-active" : ""}`}
+              type="button"
+              onClick={() => {
+                setEmployeeListFilter("all");
+                setCurrentPage("employee-list");
+              }}
+            >
+              Employee Directory
+            </button>
+          )}
+          {canManageEmployees && (
+            <>
+              <button
+                className={`sidebar-link ${currentPage === "profile" ? "is-active" : ""}`}
+                type="button"
+                onClick={() => setCurrentPage("profile")}
+              >
+                Create Profile
+              </button>
+              <button
+                className={`sidebar-link ${currentPage === "designer" ? "is-active" : ""}`}
+                type="button"
+                onClick={() => setCurrentPage("designer")}
+              >
+                Form Designer
+              </button>
+              <button
+                className={`sidebar-link ${currentPage === "users" ? "is-active" : ""}`}
+                type="button"
+                onClick={() => setCurrentPage("users")}
+              >
+                User Management
+              </button>
+              <button
+                className={`sidebar-link ${employeeListFilter === "archived" ? "is-active" : ""}`}
+                type="button"
+                onClick={() => {
+                  setEmployeeListFilter("archived");
+                  setCurrentPage("employee-list");
+                }}
+              >
+                Archived Records
+              </button>
+            </>
+          )}
+        </nav>
+
+        <div className="sidebar-panel">
+          <small>Total Employees</small>
+          <strong>{summary?.totalEmployees ?? employees.length}</strong>
+          <span>{isDirector ? "Read-only access" : "HR management access"}</span>
+        </div>
+
+        <div className="sidebar-actions">
+          <button className="btn btn-primary" type="button" onClick={() => loadData(userRole)}>Reload Data</button>
+          <button className="btn btn-secondary" type="button" onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}>
+            {theme === "dark" ? "Light Mode" : "Dark Mode"}
+          </button>
+          <button className="btn btn-secondary" type="button" onClick={handleLogout}>Log Out</button>
+        </div>
+      </aside>
+
+      <main className="container app-content">
       <header className="hero">
-        <p className="eyebrow"><span className="telenergy">TELENERGY</span> staff database</p>
+        <div className="brand-strip">
+          <img className="brand-logo brand-logo-header" src="/telenergy-logo-transparent.png" alt="TELENERGY" />
+          <span>Staff database</span>
+        </div>
         <h1>
-          {currentPage === "dashboard" && "HR Database Dashboard"}
+          {currentPage === "dashboard" && (isDirector ? "Managing Director Employee View" : "HR Database Dashboard")}
           {currentPage === "employee-list" && "Employee List View"}
           {currentPage === "employee-detail" && "Employee Detail View"}
           {currentPage === "employee-edit" && "Edit Employee Details"}
           {currentPage === "designer" && "Admin Form Designer"}
           {currentPage === "profile" && "Create Employee Profile"}
+          {currentPage === "users" && "User Management"}
         </h1>
         <p className="hero-subtitle">
-          {currentPage === "dashboard" && "Manage complete employee HR profiles, employment status, benefits, contact details, and custom fields."}
+          {currentPage === "dashboard" && (isDirector
+            ? "Read-only access to employee records, status, benefits, contact details, and profile information."
+            : "Manage complete employee HR profiles, employment status, benefits, contact details, and custom fields.")}
           {currentPage === "employee-list" && "Spreadsheet view of employees based on the selected dashboard filter."}
           {currentPage === "employee-detail" && "Complete employee profile details in list form."}
           {currentPage === "employee-edit" && "Update employee details and click Save to lock changes in."}
           {currentPage === "designer" && "Re-order fields and add custom employee information fields."}
           {currentPage === "profile" && "Capture a complete employee profile with all required information."}
+          {currentPage === "users" && "Create accounts, assign roles, disable access, and reset passwords."}
         </p>
       </header>
       <section className="icard session-card">
-        <div className="section-head"><h2>Session</h2><small>Logged in as {username}</small></div>
-        <div className="row session-actions">
-          <button className="btn btn-secondary" onClick={() => setCurrentPage("dashboard")}>Dashboard</button>
-          <button className="btn btn-primary" onClick={loadData}>Reload Data</button>
-          <button className="btn btn-secondary" onClick={() => setTheme((prev) => (prev === "dark" ? "light" : "dark"))}>
-            {theme === "dark" ? "Light Mode" : "Dark Mode"}
-          </button>
-          <button className="btn btn-secondary" onClick={handleLogout}>Log Out</button>
-        </div>
+        <div className="section-head"><h2>Session</h2><small>{isDirector ? "Managing Director read-only view" : "HR management view"}</small></div>
       </section>
       {error && <p className="error">{error}</p>}
+      {statusMessage && !error && <p className="status-message">{statusMessage}</p>}
 
       {currentPage === "dashboard" && summary && (
         <div className="summary-grid">
@@ -1138,7 +1359,19 @@ export default function App() {
             <p>On Payroll</p>
             <strong>{summary.onPayrollEmployees ?? 0}</strong>
           </section>
-          {isAdmin && (
+          {canManageEmployees && (
+            <>
+              <section className="metric-card">
+                <p>Archived Records</p>
+                <strong>{archivedEmployees.length}</strong>
+              </section>
+              <section className="metric-card">
+                <p>Missing Documents</p>
+                <strong>{missingDocumentCount}</strong>
+              </section>
+            </>
+          )}
+          {canViewEmployeeDirectory && (
             <section className="metric-card view-employee-card">
               <p>View Employee</p>
               <div className="view-employee-select-wrap">
@@ -1193,15 +1426,56 @@ export default function App() {
               <p><strong>Job Title:</strong> {selectedEmployee.jobTitle}</p>
               <p><strong>Location:</strong> {selectedEmployee.location}</p>
               <div className="row">
-                <button className="btn btn-secondary" onClick={() => startEditEmployee(selectedEmployee)}>Edit Details</button>
-                <button className="btn btn-danger" onClick={() => deleteEmployee(selectedEmployee.employeeNo)}>Delete</button>
+                <button
+                  className="btn btn-secondary"
+                  onClick={() => {
+                    setSelectedListEmployeeNo(selectedEmployee.employeeNo);
+                    loadEmployeeAudit(selectedEmployee.employeeNo);
+                    setCurrentPage("employee-detail");
+                  }}
+                >
+                  View Details
+                </button>
+                {canManageEmployees && (
+                  <>
+                    <button className="btn btn-secondary" onClick={() => startEditEmployee(selectedEmployee)}>Edit Details</button>
+                    <button className="btn btn-danger" onClick={() => deleteEmployee(selectedEmployee.employeeNo)}>Delete</button>
+                  </>
+                )}
               </div>
             </div>
           )}
         </section>
       )}
 
-      {currentPage === "employee-edit" && isAdmin && editEmployeeNo && (
+      {currentPage === "dashboard" && canManageEmployees && recentAuditLogs.length > 0 && (
+        <section className="icard">
+          <div className="section-head"><h2>Recent Activity</h2><small>Last {recentAuditLogs.length} audited action(s)</small></div>
+          <div className="audit-list">
+            {recentAuditLogs.map((log) => (
+              <div className="detail-item" key={log.id}>
+                <strong>{log.action} - {log.employeeNo}</strong>
+                <span>{log.actor} at {new Date(log.occurredAt).toLocaleString()}</span>
+                <small>{log.details}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {currentPage === "dashboard" && canManageEmployees && systemStatus && (
+        <section className="icard">
+          <div className="section-head"><h2>System Status</h2><small>Operational checks</small></div>
+          <div className="summary-grid">
+            <section className="metric-card"><p>Database</p><strong>{systemStatus.status}</strong></section>
+            <section className="metric-card"><p>User Accounts</p><strong>{systemStatus.userAccounts ?? 0}</strong></section>
+            <section className="metric-card"><p>Audit Events</p><strong>{systemStatus.auditEvents ?? 0}</strong></section>
+          </div>
+          <small>Backups are managed through the scripts in the project `ops` folder.</small>
+        </section>
+      )}
+
+      {currentPage === "employee-edit" && canManageEmployees && editEmployeeNo && (
         <section className="card">
           <div className="section-head">
             <h2>Edit Employee Profile</h2>
@@ -1281,7 +1555,7 @@ export default function App() {
         </section>
       )}
 
-      {currentPage === "employee-list" && isAdmin && (
+      {currentPage === "employee-list" && canViewEmployeeDirectory && (
         <section className="card spreadsheet-card">
           <div className="section-head">
             <h2>{selectedEmployeeFilter.label}</h2>
@@ -1289,7 +1563,18 @@ export default function App() {
           </div>
           <div className="row sheet-toolbar">
             <button className="btn btn-secondary" onClick={() => setCurrentPage("dashboard")}>Back to Dashboard</button>
-            <button className="btn btn-primary" type="button" onClick={exportEmployeesCsv}>Export All (CSV)</button>
+            {canManageEmployees && (
+              <select
+                value={employeeListFilter}
+                onChange={(e) => setEmployeeListFilter(e.target.value)}
+                aria-label="Employee list filter"
+              >
+                {employeeFilterOptions.map((opt) => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+              </select>
+            )}
+            {canManageEmployees && (
+              <button className="btn btn-primary" type="button" onClick={exportEmployeesCsv}>Export All (CSV)</button>
+            )}
             <input
               value={listSearch}
               onChange={(e) => setListSearch(e.target.value)}
@@ -1318,6 +1603,7 @@ export default function App() {
                   <th>Location</th>
                   <th>Mobile Phone</th>
                   <th>Email</th>
+                  {employeeListFilter === "archived" && <th>Action</th>}
                 </tr>
               </thead>
               <tbody>
@@ -1327,6 +1613,7 @@ export default function App() {
                     className="employee-row"
                     onClick={() => {
                       setSelectedListEmployeeNo(emp.employeeNo);
+                      loadEmployeeAudit(emp.employeeNo);
                       setCurrentPage("employee-detail");
                     }}
                   >
@@ -1340,10 +1627,20 @@ export default function App() {
                     <td>{emp.location || "-"}</td>
                     <td>{emp.mobilePhoneNo || "-"}</td>
                     <td>{emp.emailAddress || "-"}</td>
+                    {employeeListFilter === "archived" && (
+                      <td>
+                        <button className="btn btn-secondary" type="button" onClick={(event) => {
+                          event.stopPropagation();
+                          restoreEmployee(emp.employeeNo);
+                        }}>
+                          Restore
+                        </button>
+                      </td>
+                    )}
                   </tr>
                 )) : (
                   <tr>
-                    <td colSpan={10}>No employees found for this filter/search.</td>
+                    <td colSpan={employeeListFilter === "archived" ? 11 : 10}>No employees found for this filter/search.</td>
                   </tr>
                 )}
               </tbody>
@@ -1352,7 +1649,7 @@ export default function App() {
         </section>
       )}
 
-      {currentPage === "employee-detail" && isAdmin && selectedListEmployee && (
+      {currentPage === "employee-detail" && canViewEmployeeDirectory && selectedListEmployee && (
         <section className="card employee-detail-card">
           <aside className="detail-passport-pin">
             <strong>Passport Picture</strong>
@@ -1433,10 +1730,26 @@ export default function App() {
               </div>
             </div>
           )}
+          {canManageEmployees && (
+            <div className="detail-media-section">
+              <h3>Audit History</h3>
+              <div className="audit-list">
+                {auditLogs.length > 0 ? auditLogs.map((log) => (
+                  <div className="detail-item" key={log.id}>
+                    <strong>{log.action}</strong>
+                    <span>{log.actor} at {new Date(log.occurredAt).toLocaleString()}</span>
+                    <small>{log.details || "-"}</small>
+                  </div>
+                )) : (
+                  <div className="detail-item"><span>No audit history yet.</span></div>
+                )}
+              </div>
+            </div>
+          )}
         </section>
       )}
 
-      {isAdmin && currentPage === "designer" && (
+      {canManageEmployees && currentPage === "designer" && (
         <section id="designer" className="card">
           <div className="section-head"><h2>Admin Form Designer</h2><small>Re-order fields and add new custom employee info fields.</small></div>
           <div className="row">
@@ -1496,7 +1809,69 @@ export default function App() {
         </section>
       )}
 
-      {currentPage === "profile" && (
+      {canManageEmployees && currentPage === "users" && (
+        <section className="card">
+          <div className="section-head"><h2>User Management</h2><small>{userAccounts.length} account(s)</small></div>
+          <div className="grid">
+            <div className="field-block">
+              <label className="field-label">Username</label>
+              <input value={newUserForm.username} onChange={(e) => setNewUserForm((prev) => ({ ...prev, username: e.target.value }))} />
+            </div>
+            <div className="field-block">
+              <label className="field-label">Display Name</label>
+              <input value={newUserForm.displayName} onChange={(e) => setNewUserForm((prev) => ({ ...prev, displayName: e.target.value }))} />
+            </div>
+            <div className="field-block">
+              <label className="field-label">Role</label>
+              <select value={newUserForm.role} onChange={(e) => setNewUserForm((prev) => ({ ...prev, role: e.target.value }))}>
+                {["ADMIN", "DIRECTOR", "MANAGER", "EMPLOYEE"].map((role) => <option key={role}>{role}</option>)}
+              </select>
+            </div>
+            <div className="field-block">
+              <label className="field-label">Temporary Password</label>
+              <input type="password" minLength={8} value={newUserForm.password} onChange={(e) => setNewUserForm((prev) => ({ ...prev, password: e.target.value }))} />
+              <small>{PASSWORD_RULE_TEXT}</small>
+            </div>
+            <button className="btn btn-primary" type="button" onClick={createUserAccount}>Create User</button>
+          </div>
+
+          <div className="sheet-wrap">
+            <table className="data-table sheet-table">
+              <thead>
+                <tr>
+                  <th>Username</th>
+                  <th>Display Name</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Last Login</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {userAccounts.map((user) => (
+                  <tr key={user.id}>
+                    <td>{user.username}</td>
+                    <td>{user.displayName || "-"}</td>
+                    <td>{user.role}</td>
+                    <td>{user.enabled ? "Enabled" : "Disabled"}</td>
+                    <td>{user.lastLoginAt ? new Date(user.lastLoginAt).toLocaleString() : "-"}</td>
+                    <td>
+                      <div className="actions">
+                        <button className="btn btn-secondary" type="button" onClick={() => resetUserPassword(user)}>Reset Password</button>
+                        <button className="btn btn-secondary" type="button" onClick={() => toggleUserEnabled(user)}>
+                          {user.enabled ? "Disable" : "Enable"}
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
+
+      {currentPage === "profile" && canManageEmployees && (
       <section id="profile" className="card">
         <div className="section-head"><h2>Create Employee Profile</h2></div>
         <div className="profile-sections">
@@ -1572,18 +1947,6 @@ export default function App() {
       </section>
       )}
 
-      {currentPage === "dashboard" && (
-        <div className="floating-actions">
-          {isAdmin && (
-            <button className="btn btn-primary" onClick={() => setCurrentPage("designer")}>
-              Form Designer
-            </button>
-          )}
-          <button className="btn btn-primary" onClick={() => setCurrentPage("profile")}>
-            Employee Profile
-          </button>
-        </div>
-      )}
       {confirmDialogOpen && (
         <div className="confirm-overlay" role="dialog" aria-modal="true" aria-label="Confirmation dialog">
           <div className="confirm-card">
@@ -1601,12 +1964,17 @@ export default function App() {
         </div>
       )}
       <footer className="app-footer">
-        <span>Copyright &copy; {currentYear} TELENERGY. All rights reserved.</span>
+        <span className="footer-brand">
+          Copyright &copy; {currentYear}
+          <img className="brand-logo brand-logo-footer" src="/telenergy-logo-transparent.png" alt="TELENERGY" />
+          All rights reserved.
+        </span>
         <div className="app-footer-links">
           <a href="/client-guide.html" target="_blank" rel="noreferrer">Client Guide</a>
           <a href="http://localhost:5173" target="_blank" rel="noreferrer">App</a>
         </div>
       </footer>
-    </main>
+      </main>
+    </div>
   );
 }

@@ -24,19 +24,39 @@ This project is a full-stack system where admin/manager can access and manage em
 - `POST /api/admin/employee-work` -> create work record
 - `PUT /api/admin/employee-work/{employeeId}` -> update work record
 - `DELETE /api/admin/employee-work/{employeeId}` -> delete work record
+- `GET /api/director/employee-work` -> all employee work records for Managing Director read-only view
+- `GET /api/director/employee-work/{employeeId}` -> single employee work record for Managing Director read-only view
 - `GET /api/employee/work/{employeeId}` -> employee/manager/admin read endpoint
+- `GET /api/auth/me` -> authenticated username and roles used by the frontend
+- `GET /api/admin/users` -> HR-only user account list
+- `POST /api/admin/users` -> create database-backed user account
+- `PUT /api/admin/users/{id}` -> update user role/status
+- `POST /api/admin/users/{id}/reset-password` -> reset user password
+- `GET /api/admin/employee-work/search` -> paged employee search/filter
+- `GET /api/admin/employee-work/archived` -> archived employee records
+- `POST /api/admin/employee-work/{employeeId}/restore` -> restore archived employee
+- `GET /api/admin/audit` -> recent audit trail
+- `GET /api/admin/audit/employee/{employeeId}` -> audit trail for one employee
+- `GET /api/admin/system/status` -> database/user/audit health summary
+- `GET /api/analytics/work-summary` -> secured dashboard summary for HR/Director
 
 ### Auth (HTTP Basic)
 
-- `admin / admin123` -> `ROLE_ADMIN`
+- `humanresource / HRMI056` -> `ROLE_ADMIN`
+- `MD / MD056` -> `ROLE_DIRECTOR`
 - `manager / manager123` -> `ROLE_MANAGER`
 - `employee / employee123` -> `ROLE_EMPLOYEE`
 
+The browser does not persist passwords; users sign in again after a refresh/reopen.
+User accounts are stored in PostgreSQL with BCrypt-hashed passwords and are seeded only when the user table is empty.
+After first setup, change the seeded passwords in the User Management screen. New and reset passwords must be at least 8 characters and include letters and numbers.
+
 Authorization rules:
-- `/api/admin/**` -> ADMIN or MANAGER
+- `/api/admin/**` -> ADMIN
+- `/api/director/**` -> DIRECTOR or ADMIN
 - `/api/employee/**` -> EMPLOYEE, MANAGER, ADMIN
 
-### Python service (`http://localhost:8000`)
+### Python service (`http://localhost:8001`)
 
 - `GET /api/analytics/work-summary` -> summary by status/team
 
@@ -59,11 +79,19 @@ copy .env.example .env
 docker compose up --build
 ```
 
+Before production use, set a strong `POSTGRES_PASSWORD` in `.env` and keep `APP_CORS_ALLOWED_ORIGINS` limited to the frontend URLs users actually open.
+
 Services:
 - React: `http://localhost:5173`
 - Java API: `http://localhost:8080`
-- Python API: `http://localhost:8000`
-- PostgreSQL: `localhost:5432`
+- Python API: `http://localhost:8001`
+- PostgreSQL: `localhost:5432` only on the host machine
+
+## Website Deployment
+
+For a no-physical-server setup, use the free website deployment guide:
+
+- [Free Website Deployment Guide](FREE_WEBSITE_DEPLOYMENT.md)
 
 ## Stability Defaults (already configured)
 
@@ -72,6 +100,10 @@ Services:
 - Resource limits (`cpus`, `mem_limit`, `pids_limit`)
 - Log rotation (10 MB x 5 files per container)
 - Dependency startup ordering via `condition: service_healthy`
+- Soft archive/restore instead of permanent employee deletes
+- Audit trail for employee create/update/archive/restore/export actions
+- Login throttling after repeated failed password attempts
+- Restricted CORS origins and no-store API security headers
 
 ## Backup and Restore
 

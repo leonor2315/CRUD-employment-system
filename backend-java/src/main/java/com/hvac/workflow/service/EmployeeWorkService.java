@@ -5,7 +5,11 @@ import com.hvac.workflow.model.TechnicianRequest;
 import com.hvac.workflow.repository.TechnicianRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -18,21 +22,47 @@ public class EmployeeWorkService {
 
     private final TechnicianRepository repository;
     private final ObjectMapper objectMapper;
+    private final AuditLogService auditLogService;
 
-    public EmployeeWorkService(TechnicianRepository repository, ObjectMapper objectMapper) {
+    public EmployeeWorkService(
+            TechnicianRepository repository,
+            ObjectMapper objectMapper,
+            AuditLogService auditLogService
+    ) {
         this.repository = repository;
         this.objectMapper = objectMapper;
+        this.auditLogService = auditLogService;
     }
 
     public List<TechnicianRecord> getAll() {
-        // Return all employee records (admin dashboard list).
-        return repository.findAll();
+        // Return active employee records for dashboard/list views.
+        return repository.findByArchivedFalse();
+    }
+
+    public List<TechnicianRecord> getArchived() {
+        return repository.findByArchivedTrue();
+    }
+
+    public Page<TechnicianRecord> search(
+            boolean archived,
+            String q,
+            String status,
+            String payrollStatus,
+            String location,
+            String jobGroup,
+            Pageable pageable
+    ) {
+        return repository.search(archived, q, status, payrollStatus, location, jobGroup, pageable);
     }
 
     public TechnicianRecord getByEmployeeId(String employeeId) {
         // Fetch one record or return 404 when employee number does not exist.
-        return repository.findById(employeeId)
+        TechnicianRecord record = repository.findById(employeeId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Employee record not found"));
+        if (Boolean.TRUE.equals(record.getArchived())) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Employee record is archived");
+        }
+        return record;
     }
 
     public TechnicianRecord create(TechnicianRequest request) {
@@ -40,13 +70,23 @@ public class EmployeeWorkService {
         if (repository.existsById(request.employeeNo())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Employee No already exists");
         }
+        validateDuplicateSensitiveFields(request.employeeNo(), request);
         TechnicianRecord record = toRecord(request);
-        return repository.save(record);
+        Instant now = Instant.now();
+        record.setCreatedAt(now);
+        record.setUpdatedAt(now);
+        record.setCreatedBy(currentActor());
+        record.setUpdatedBy(currentActor());
+        record.setArchived(Boolean.FALSE);
+        TechnicianRecord saved = repository.save(record);
+        auditLogService.record(saved.getEmployeeNo(), "CREATE", "Created employee profile");
+        return saved;
     }
 
     public TechnicianRecord update(String employeeId, TechnicianRequest request) {
         // Load existing profile, then overwrite fields with request payload.
         TechnicianRecord existing = getByEmployeeId(employeeId);
+        validateDuplicateSensitiveFields(employeeId, request);
         existing.setTitle(request.title());
         existing.setFullName(request.fullName());
         existing.setFirstName(request.firstName());
@@ -111,16 +151,40 @@ public class EmployeeWorkService {
         existing.setLegacyTask(request.jobTitle() == null ? "Profile Update" : request.jobTitle());
         existing.setLegacyHoursLogged(0);
         existing.setLegacyLastUpdated(Instant.now().toString());
+        existing.setUpdatedAt(Instant.now());
+        existing.setUpdatedBy(currentActor());
         // Persist and return the latest saved state.
-        return repository.save(existing);
+        TechnicianRecord saved = repository.save(existing);
+        auditLogService.record(saved.getEmployeeNo(), "UPDATE", "Updated employee profile");
+        return saved;
     }
 
     public void delete(String employeeId) {
-        // Protect delete route with a not-found check for clearer API errors.
-        if (!repository.existsById(employeeId)) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Employee record not found");
-        }
-        repository.deleteById(employeeId);
+        TechnicianRecord existing = getByEmployeeId(employeeId);
+        existing.setArchived(Boolean.TRUE);
+        existing.setArchivedAt(Instant.now());
+        existing.setArchivedBy(currentActor());
+        existing.setUpdatedAt(Instant.now());
+        existing.setUpdatedBy(currentActor());
+        repository.save(existing);
+        auditLogService.record(existing.getEmployeeNo(), "ARCHIVE", "Archived employee profile");
+    }
+
+    public TechnicianRecord restore(String employeeId) {
+        TechnicianRecord existing = repository.findById(employeeId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Employee record not found"));
+        existing.setArchived(Boolean.FALSE);
+        existing.setArchivedAt(null);
+        existing.setArchivedBy(null);
+        existing.setUpdatedAt(Instant.now());
+        existing.setUpdatedBy(currentActor());
+        TechnicianRecord saved = repository.save(existing);
+        auditLogService.record(saved.getEmployeeNo(), "RESTORE", "Restored archived employee profile");
+        return saved;
+    }
+
+    public void recordExport(String details) {
+        auditLogService.record("ALL", "EXPORT", details);
     }
 
     private TechnicianRecord toRecord(TechnicianRequest request) {
@@ -192,6 +256,40 @@ public class EmployeeWorkService {
         record.setLegacyHoursLogged(0);
         record.setLegacyLastUpdated(Instant.now().toString());
         return record;
+    }
+
+    private String currentActor() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication == null || authentication.getName() == null) {
+            return "system";
+        }
+        return authentication.getName();
+    }
+
+    private void validateDuplicateSensitiveFields(String employeeNo, TechnicianRequest request) {
+        List<TechnicianRecord> activeRecords = repository.findByArchivedFalse();
+        String ghanaCardNumber = normalized(request.ghanaCardNumber());
+        String socialSecurityNo = normalized(request.socialSecurityNo());
+        String emailAddress = normalized(request.emailAddress());
+
+        for (TechnicianRecord record : activeRecords) {
+            if (record.getEmployeeNo().equals(employeeNo)) {
+                continue;
+            }
+            if (!ghanaCardNumber.isBlank() && ghanaCardNumber.equals(normalized(record.getGhanaCardNumber()))) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Ghana Card Number already exists");
+            }
+            if (!socialSecurityNo.isBlank() && socialSecurityNo.equals(normalized(record.getSocialSecurityNo()))) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Social Security No already exists");
+            }
+            if (!emailAddress.isBlank() && emailAddress.equals(normalized(record.getEmailAddress()))) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Email address already exists");
+            }
+        }
+    }
+
+    private String normalized(String value) {
+        return value == null ? "" : value.trim().toLowerCase();
     }
 
     private String toJson(Map<String, String> customFields) {

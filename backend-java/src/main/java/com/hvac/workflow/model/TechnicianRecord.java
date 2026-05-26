@@ -5,6 +5,8 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 
+import java.time.Instant;
+
 @Entity
 @Table(name = "technician")
 // JPA entity mapped to the technician table used by the HVAC workflow.
@@ -89,6 +91,13 @@ public class TechnicianRecord {
     private Integer legacyHoursLogged;
     @Column(name = "last_updated")
     private String legacyLastUpdated;
+    private Boolean archived = Boolean.FALSE;
+    private Instant archivedAt;
+    private String archivedBy;
+    private Instant createdAt;
+    private String createdBy;
+    private Instant updatedAt;
+    private String updatedBy;
 
     public String getEmployeeNo() { return employeeNo; }
     public void setEmployeeNo(String employeeNo) { this.employeeNo = employeeNo; }
@@ -220,4 +229,18 @@ public class TechnicianRecord {
     public void setLegacyHoursLogged(Integer legacyHoursLogged) { this.legacyHoursLogged = legacyHoursLogged; }
     public String getLegacyLastUpdated() { return legacyLastUpdated; }
     public void setLegacyLastUpdated(String legacyLastUpdated) { this.legacyLastUpdated = legacyLastUpdated; }
+    public Boolean getArchived() { return archived; }
+    public void setArchived(Boolean archived) { this.archived = archived; }
+    public Instant getArchivedAt() { return archivedAt; }
+    public void setArchivedAt(Instant archivedAt) { this.archivedAt = archivedAt; }
+    public String getArchivedBy() { return archivedBy; }
+    public void setArchivedBy(String archivedBy) { this.archivedBy = archivedBy; }
+    public Instant getCreatedAt() { return createdAt; }
+    public void setCreatedAt(Instant createdAt) { this.createdAt = createdAt; }
+    public String getCreatedBy() { return createdBy; }
+    public void setCreatedBy(String createdBy) { this.createdBy = createdBy; }
+    public Instant getUpdatedAt() { return updatedAt; }
+    public void setUpdatedAt(Instant updatedAt) { this.updatedAt = updatedAt; }
+    public String getUpdatedBy() { return updatedBy; }
+    public void setUpdatedBy(String updatedBy) { this.updatedBy = updatedBy; }
 }

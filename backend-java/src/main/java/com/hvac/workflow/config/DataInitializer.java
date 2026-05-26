@@ -1,19 +1,45 @@
 package com.hvac.workflow.config;
 
 import com.hvac.workflow.model.TechnicianRecord;
+import com.hvac.workflow.model.UserAccount;
 import com.hvac.workflow.repository.TechnicianRepository;
+import com.hvac.workflow.repository.UserAccountRepository;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.security.crypto.password.PasswordEncoder;
 
+import java.time.Instant;
 import java.util.List;
 
 @Configuration
 public class DataInitializer {
 
     @Bean
-    CommandLineRunner seedData(TechnicianRepository repository) {
+    CommandLineRunner seedData(
+            TechnicianRepository repository,
+            UserAccountRepository userAccountRepository,
+            PasswordEncoder passwordEncoder
+    ) {
         return args -> {
+            if (userAccountRepository.count() == 0) {
+                Instant now = Instant.now();
+                userAccountRepository.saveAll(List.of(
+                        user("humanresource", "Human Resource", "ADMIN", "HRMI056", passwordEncoder, now),
+                        user("MD", "Managing Director", "DIRECTOR", "MD056", passwordEncoder, now),
+                        user("manager", "Manager", "MANAGER", "manager123", passwordEncoder, now),
+                        user("employee", "Employee", "EMPLOYEE", "employee123", passwordEncoder, now)
+                ));
+            } else if (
+                    userAccountRepository.findByUsernameIgnoreCase("MD").isEmpty()
+                            && userAccountRepository.findByUsernameIgnoreCase("managingdirector").isPresent()
+            ) {
+                UserAccount directorAccount = userAccountRepository.findByUsernameIgnoreCase("managingdirector").orElseThrow();
+                directorAccount.setUsername("MD");
+                directorAccount.setUpdatedAt(Instant.now());
+                userAccountRepository.save(directorAccount);
+            }
+
             // Seed sample data only when the table is empty.
             if (repository.count() > 0) {
                 return;
@@ -25,6 +51,25 @@ public class DataInitializer {
                     build("EMP-004", "Mr.", "Liam Wilson", "Supervisory", "Operations", "Kumasi", "Engaged")
             ));
         };
+    }
+
+    private UserAccount user(
+            String username,
+            String displayName,
+            String role,
+            String password,
+            PasswordEncoder passwordEncoder,
+            Instant now
+    ) {
+        UserAccount account = new UserAccount();
+        account.setUsername(username);
+        account.setDisplayName(displayName);
+        account.setRole(role);
+        account.setPasswordHash(passwordEncoder.encode(password));
+        account.setEnabled(Boolean.TRUE);
+        account.setCreatedAt(now);
+        account.setUpdatedAt(now);
+        return account;
     }
 
     private TechnicianRecord build(
